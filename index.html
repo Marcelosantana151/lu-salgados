@@ -136,6 +136,24 @@
   #toast.visivel { opacity: 1; }
   #toast.erro { background: var(--ruim); }
   .carregando { text-align: center; padding: 60px 0; color: var(--suave); }
+  /* Balanço (relatório) */
+  .rel { background: #fff; color: #1f1a17; border: 1px solid var(--linha); border-radius: 12px; padding: 16px 14px; font-size: 13px; line-height: 1.35; }
+  .rel h1 { font: 600 20px var(--titulo); margin: 0; letter-spacing: .04em; }
+  .rel .sub { color: #6b5b4e; margin: 2px 0 12px; font-size: 13px; }
+  .rel h4 { font: 600 12px var(--titulo); text-transform: uppercase; letter-spacing: .1em; color: #6b5b4e; margin: 14px 0 6px; border-bottom: 1px solid #e6d8c3; padding-bottom: 3px; }
+  .rel table { font-size: 12px; } .rel th, .rel td { padding: 4px 3px; border-bottom: 1px solid #efe6d8; color: #1f1a17; }
+  .rel th { color: #6b5b4e; } .rel tr.total td { font-weight: 700; border-top: 2px solid #c9b58f; }
+  .rel .kv { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dotted #e6d8c3; }
+  .rel .kv.forte { font-weight: 700; border-bottom: 0; font-size: 14px; }
+  .rel .rodape { margin-top: 14px; font-size: 11px; color: #8a7a6a; text-align: center; }
+  #impressao { display: none; }
+  @media print {
+    body > *:not(#impressao) { display: none !important; }
+    #impressao { display: block !important; }
+    #impressao .rel { border: 0; padding: 0; font-size: 12pt; }
+    #impressao .rel table { font-size: 10.5pt; }
+    @page { margin: 14mm; }
+  }
 </style>
 </head>
 <body>
@@ -169,6 +187,7 @@
 </div>
 
 <div class="modal" id="modal"><div class="folha" id="folha"></div></div>
+<div id="impressao"></div>
 <div id="toast"></div>
 
 <script src="config.js"></script>
@@ -507,7 +526,7 @@ function telaDia() {
       <div id="conferencia" class="small" style="margin-top:8px"></div>
     </div>
     <label>Observações do dia<textarea id="obs" rows="2" placeholder="Ex.: chuva, encomenda grande, feira…">${esc(R.obs)}</textarea></label>
-    ${R.existe ? '<button class="btn perigo cheio" id="apagarDia">Apagar lançamento deste dia</button>' : ''}`;
+    ${R.existe ? '<button class="btn sec cheio" id="balancoDia">📄 Balanço do dia (imprimir / enviar)</button><button class="btn perigo cheio" id="apagarDia">Apagar lançamento deste dia</button>' : ''}`;
   $('#tela').innerHTML = h;
   $('#extra').innerHTML = `<div class="rodape-dia"><div class="in">
       <div class="tot"><div>Investido<b id="tInv"></b></div><div>Vendido<b id="tFat"></b></div><div>Lucro<b id="tLuc"></b></div></div>
@@ -530,6 +549,10 @@ function telaDia() {
   document.querySelectorAll('[data-caixa]').forEach(inp => inp.oninput = () => { R.caixa[inp.dataset.caixa] = num(inp.value); marcarSujo(); atualizarTotais(); });
   $('#obs').oninput = e => { R.obs = e.target.value; marcarSujo(); };
   $('#salvarDia').onclick = () => salvarDia(false);
+  if ($('#balancoDia')) $('#balancoDia').onclick = () => {
+    if (S.sujo) { toast('Salve o dia antes de gerar o balanço.'); return; }
+    abrirRelatorio(relatorioDia(S.dia));
+  };
   if ($('#apagarDia')) $('#apagarDia').onclick = async () => {
     if (!confirm('Apagar todo o lançamento de ' + dataLonga(S.dia) + '?')) return;
     R.itens.forEach(i => { i.prod = 0; i.vend = 0; });
@@ -608,6 +631,7 @@ function telaPainel() {
   if (!r.dias.length) {
     h += `<div class="vazio">Nenhum dia lançado em ${nomeMes(S.mes).toLowerCase()}.</div>`;
   } else {
+    h += `<button class="btn sec cheio" id="balancoMes" style="margin:0 0 12px">📄 Balanço do mês (imprimir / enviar)</button>`;
     h += `<div class="grade2">
       <div class="kpi"><div class="r">Faturamento</div><div class="v">${brl(r.fat)}</div><div class="d">${qtd(r.vend)} salgados vendidos</div></div>
       <div class="kpi"><div class="r">Investimento</div><div class="v">${brl(r.inv)}</div><div class="d">${qtd(r.prod)} produzidos × custo</div></div>
@@ -667,9 +691,114 @@ function telaPainel() {
   $('#tela').innerHTML = h;
   $('#mAnt').onclick = async () => { S.mes = somaMes(S.mes, -1); await garantirDesde(S.mes); render(); };
   $('#mProx').onclick = () => { S.mes = somaMes(S.mes, 1); render(); };
+  if ($('#balancoMes')) $('#balancoMes').onclick = () => abrirRelatorio(relatorioMes(S.mes));
   document.querySelectorAll('[data-abrir]').forEach(b => b.onclick = () => {
     if (S.sujo && !confirm('Há um rascunho não salvo em ' + dataLonga(S.rascunho.data) + '. Abrir outro dia mesmo assim?')) return;
     S.dia = b.dataset.abrir; S.rascunho = null; S.sujo = false; persistirRascunho(); S.aba = 'dia'; render(); window.scrollTo(0, 0);
+  });
+}
+
+// ================= BALANÇO (relatório para imprimir / enviar) =================
+const agoraTxt = () => new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const linhaKv = (k, v, forte) => `<div class="kv ${forte ? 'forte' : ''}"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
+const cabRel = (titulo, sub) => `<h1>${esc(cfg().negocio || 'Lu Salgados')}</h1><div class="sub">${esc(titulo)}${sub ? ' · ' + esc(sub) : ''}</div>`;
+const rodapeRel = () => `<div class="rodape">Gerado em ${agoraTxt()} pelo app ${esc(cfg().negocio || 'Lu Salgados')}. Custos por unidade conforme tabela de preços vigente no dia do lançamento.</div>`;
+
+// Balanço de um dia: produção, vendas, sobras, caixa
+function relatorioDia(data) {
+  const d = S.dados.dias.find(x => x.data === data);
+  if (!d) return null;
+  const itens = (d.itens || []).slice().sort((a, b) => num(b.vend) * num(b.preco) - num(a.vend) * num(a.preco));
+  const t = totaisItens(itens);
+  const cx = d.caixa || {}, somaCx = num(cx.pix) + num(cx.dinheiro) + num(cx.cartao);
+  const titulo = 'Balanço do dia ' + dataLonga(data);
+  let h = `<div class="rel">${cabRel(titulo)}
+    <h4>Produção e vendas</h4>
+    <table><tr><th>Produto</th><th class="n">Prod.</th><th class="n">Vend.</th><th class="n">Sobra</th><th class="n">Custo</th><th class="n">Venda</th><th class="n">Lucro</th></tr>
+    ${itens.map(i => { const p = num(i.prod), v = num(i.vend), inv = p * num(i.custo), fat = v * num(i.preco);
+      return `<tr><td>${esc(nomeProduto(i.pid, i.nome))}</td><td class="n">${qtd(p)}</td><td class="n">${qtd(v)}</td><td class="n">${qtd(Math.max(p - v, 0))}</td><td class="n">${brl(inv)}</td><td class="n">${brl(fat)}</td><td class="n">${brl(fat - inv)}</td></tr>`; }).join('')}
+    <tr class="total"><td>Total</td><td class="n">${qtd(t.prod)}</td><td class="n">${qtd(t.vend)}</td><td class="n">${qtd(t.perd)}</td><td class="n">${brl(t.inv)}</td><td class="n">${brl(t.fat)}</td><td class="n">${brl(t.lucro)}</td></tr></table>
+    <h4>Resumo</h4>
+    ${linhaKv('Faturamento (vendas)', brl(t.fat))}${linhaKv('Custo dos produzidos', brl(t.inv))}${linhaKv('Prejuízo com sobras (custo)', brl(t.valPerd))}
+    ${linhaKv('% de perda', pct(t.prod ? t.perd / t.prod : 0))}${linhaKv('Lucro do dia', brl(t.lucro), true)}`;
+  if (somaCx) h += `<h4>Caixa (recebimentos)</h4>${linhaKv('Pix', brl(cx.pix))}${linhaKv('Dinheiro', brl(cx.dinheiro))}${linhaKv('Cartão', brl(cx.cartao))}
+    ${linhaKv('Total recebido', brl(somaCx), true)}${Math.abs(somaCx - t.fat) >= 0.01 ? linhaKv('Diferença caixa × vendas', brl(somaCx - t.fat)) : ''}`;
+  const sobras = itens.filter(i => num(i.prod) > num(i.vend));
+  if (sobras.length) h += `<h4>Destino das sobras</h4>${sobras.map(i => linhaKv(nomeProduto(i.pid, i.nome) + ' (' + qtd(num(i.prod) - num(i.vend)) + ' un.)', i.motivo || 'Não informado')).join('')}`;
+  if (d.obs) h += `<h4>Observações</h4><div>${esc(d.obs)}</div>`;
+  h += rodapeRel() + '</div>';
+  const texto = [`*${cfg().negocio || 'Lu Salgados'} — ${titulo}*`, '',
+    ...itens.map(i => `• ${nomeProduto(i.pid, i.nome)}: ${qtd(i.prod)} prod. / ${qtd(i.vend)} vend. → ${brl(num(i.vend) * num(i.preco))}`), '',
+    `Faturamento: ${brl(t.fat)}`, `Custo dos produzidos: ${brl(t.inv)}`, `Sobras: ${qtd(t.perd)} un. (${brl(t.valPerd)})`, `*Lucro do dia: ${brl(t.lucro)}*`,
+    ...(somaCx ? ['', `Caixa: Pix ${brl(cx.pix)} · Dinheiro ${brl(cx.dinheiro)} · Cartão ${brl(cx.cartao)} = ${brl(somaCx)}`] : []),
+    ...(d.obs ? ['', 'Obs.: ' + d.obs] : [])].join('\n');
+  return { html: h, texto, titulo, arquivo: 'balanco-' + data };
+}
+
+// Balanço de um mês: dia a dia, por produto, despesas, resultado
+function relatorioMes(ym) {
+  const r = resumoMes(ym);
+  if (!r.dias.length) return null;
+  const titulo = 'Balanço de ' + nomeMes(ym);
+  const desp = S.dados.despesas.filter(d => String(d.data).slice(0, 7) === ym).sort((a, b) => a.data < b.data ? -1 : 1);
+  const prods = Object.values(r.porProduto).sort((a, b) => b.fat - a.fat);
+  const cx = r.caixa, somaCx = cx.pix + cx.dinheiro + cx.cartao;
+  let h = `<div class="rel">${cabRel(titulo, r.dias.length + ' dia(s) lançado(s)')}
+    <h4>Resultado do mês</h4>
+    ${linhaKv('Faturamento (vendas)', brl(r.fat))}${linhaKv('Custo dos produzidos', brl(r.inv))}${linhaKv('Lucro dos salgados', brl(r.lucro))}
+    ${linhaKv('Outras despesas', '− ' + brl(r.despesas))}${linhaKv('Resultado do mês', brl(r.lucro - r.despesas), true)}
+    ${linhaKv('Salgados produzidos / vendidos / sobras', qtd(r.prod) + ' / ' + qtd(r.vend) + ' / ' + qtd(r.perd))}${linhaKv('% de perda', pct(r.prod ? r.perd / r.prod : 0))}${linhaKv('Prejuízo com sobras (custo)', brl(r.valPerd))}
+    <h4>Dia a dia</h4>
+    <table><tr><th>Dia</th><th class="n">Prod.</th><th class="n">Vend.</th><th class="n">Custo</th><th class="n">Vendas</th><th class="n">Lucro</th></tr>
+    ${r.dias.map(d => `<tr><td>${cap(dataCurta(d.data))}</td><td class="n">${qtd(d._t.prod)}</td><td class="n">${qtd(d._t.vend)}</td><td class="n">${brl(d._t.inv)}</td><td class="n">${brl(d._t.fat)}</td><td class="n">${brl(d._t.lucro)}</td></tr>`).join('')}
+    <tr class="total"><td>Total</td><td class="n">${qtd(r.prod)}</td><td class="n">${qtd(r.vend)}</td><td class="n">${brl(r.inv)}</td><td class="n">${brl(r.fat)}</td><td class="n">${brl(r.lucro)}</td></tr></table>
+    <h4>Por produto</h4>
+    <table><tr><th>Produto</th><th class="n">Prod.</th><th class="n">Vend.</th><th class="n">Sobra</th><th class="n">Vendas</th><th class="n">Lucro</th></tr>
+    ${prods.map(p => `<tr><td>${esc(p.nome)}</td><td class="n">${qtd(p.prod)}</td><td class="n">${qtd(p.vend)}</td><td class="n">${qtd(p.perd)}</td><td class="n">${brl(p.fat)}</td><td class="n">${brl(p.fat - p.inv)}</td></tr>`).join('')}</table>`;
+  if (somaCx) h += `<h4>Recebimentos</h4>${linhaKv('Pix', brl(cx.pix))}${linhaKv('Dinheiro', brl(cx.dinheiro))}${linhaKv('Cartão', brl(cx.cartao))}${linhaKv('Total informado no caixa', brl(somaCx), true)}`;
+  h += `<h4>Outras despesas</h4>` + (desp.length ? `<table><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="n">Valor</th></tr>
+    ${desp.map(d => `<tr><td>${parteData(d.data).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</td><td>${esc(d.descricao)}</td><td>${esc(d.categoria)}</td><td class="n">${brl(d.valor)}</td></tr>`).join('')}
+    <tr class="total"><td colspan="3">Total</td><td class="n">${brl(r.despesas)}</td></tr></table>` : '<div class="muted">Nenhuma despesa lançada.</div>');
+  const dest = Object.keys(r.destinos);
+  if (dest.length) h += `<h4>Destino das sobras</h4>${dest.map(k => linhaKv(k, qtd(r.destinos[k].q) + ' un. · ' + brl(r.destinos[k].c))).join('')}`;
+  h += rodapeRel() + '</div>';
+  const texto = [`*${cfg().negocio || 'Lu Salgados'} — ${titulo}*`, `${r.dias.length} dia(s) lançado(s)`, '',
+    `Faturamento: ${brl(r.fat)}`, `Custo dos produzidos: ${brl(r.inv)}`, `Lucro dos salgados: ${brl(r.lucro)}`, `Outras despesas: ${brl(r.despesas)}`, `*Resultado do mês: ${brl(r.lucro - r.despesas)}*`, '',
+    `Produzidos ${qtd(r.prod)} · vendidos ${qtd(r.vend)} · sobras ${qtd(r.perd)} (${pct(r.prod ? r.perd / r.prod : 0)})`,
+    ...(somaCx ? [`Recebido: Pix ${brl(cx.pix)} · Dinheiro ${brl(cx.dinheiro)} · Cartão ${brl(cx.cartao)}`] : []), '',
+    ...prods.map(p => `• ${p.nome}: ${qtd(p.vend)} vend. → ${brl(p.fat)} (lucro ${brl(p.fat - p.inv)})`)].join('\n');
+  return { html: h, texto, titulo, arquivo: 'balanco-' + ym };
+}
+
+function abrirRelatorio(rel) {
+  if (!rel) { toast('Não há lançamentos para este período.'); return; }
+  const podeCompartilhar = !!navigator.share;
+  abrirModal(`<h3>${esc(rel.titulo)}</h3>
+    <div class="acoes" style="margin-bottom:12px">
+      <button class="btn" id="relImprimir">🖨 Imprimir / PDF</button>
+      <button class="btn sec" id="relEnviar">${podeCompartilhar ? '📤 Enviar' : '📋 Copiar texto'}</button>
+      <button class="btn sec" id="relFechar" style="flex:0 0 auto">✕</button>
+    </div>
+    <div class="small muted" style="margin:-4px 0 10px">Imprimir abre a tela do celular onde você escolhe <b>Salvar como PDF</b> e envia para a contadora. "Enviar" manda um resumo em texto (WhatsApp, e-mail).</div>
+    ${rel.html}`, () => {
+    $('#relFechar').onclick = fecharModal;
+    $('#relImprimir').onclick = () => {
+      const tituloAntes = document.title;
+      $('#impressao').innerHTML = rel.html;
+      document.title = rel.arquivo;                       // vira o nome sugerido do PDF
+      const fim = () => { document.title = tituloAntes; $('#impressao').innerHTML = ''; window.removeEventListener('afterprint', fim); };
+      window.addEventListener('afterprint', fim);
+      setTimeout(() => window.print(), 50);
+      setTimeout(fim, 60000);
+    };
+    $('#relEnviar').onclick = async () => {
+      if (navigator.share) {
+        try { await navigator.share({ title: rel.titulo, text: rel.texto }); } catch (e) { /* cancelado */ }
+      } else {
+        try { await navigator.clipboard.writeText(rel.texto); toast('Texto copiado. Cole no WhatsApp ou e-mail.'); }
+        catch (e) { toast('Não foi possível copiar.', true); }
+      }
+    };
   });
 }
 

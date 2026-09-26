@@ -1,5 +1,5 @@
 // Service worker: deixa o app abrir sem internet (a gravação continua exigindo conexão).
-const CACHE = 'lu-salgados-v2';
+const CACHE = 'lu-salgados-v3';
 const SHELL = ['./', './index.html', './config.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 
