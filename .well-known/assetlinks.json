@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "br.com.lusalgados.app",
+        "sha256_cert_fingerprints": ["E5:DA:92:E8:72:6D:8B:FA:58:64:EF:4E:AE:83:BB:0B:38:3F:CC:AF:DA:08:B1:8C:17:7A:39:43:8E:4D:31:53"]
+      }
+    }]
